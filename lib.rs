@@ -20,22 +20,13 @@ mod tickets {
         tickets_left: u32,
     }
 
-    #[derive(Debug, PartialEq, Eq, scale::Encode, scale::Decode)]
-    #[cfg_attr(
-        feature = "std",
-        derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout)
-    )]
-    pub struct AccountTickets {
-        tickets: Vec<String>
-    }
-
     #[ink(storage)]
     pub struct Tickets {
         name: String,
         description: String,
         concert_counter: u32,
         concerts: Mapping<u32, Concert>,
-        account_tickets: Mapping<AccountId, AccountTickets>,
+        account_tickets: Mapping<AccountId, Vec<String>>,
         tickets_map: Mapping<String, AccountId>,
         tickets_owners_map: Mapping<String, String>,
     }
@@ -46,7 +37,7 @@ mod tickets {
         ConcertDoesntExist,
         TicketsSoldOut,
         ConcertFinished,
-        AccountNotFound
+        AccountNotFound,
     }
 
     pub type Result<T> = core::result::Result<T, CustomError>;
@@ -112,12 +103,15 @@ mod tickets {
                 let caller = self.env().caller();
                 let ticket_id = String::from(concert_id.to_string() + ", " + &concert.tickets_left.to_string());
                 let ticket_owner = String::from(name + " " + &surname);
-                let mut owner_tickets = self.account_tickets.get(&caller).unwrap();
+                let mut owner_tickets = match self.account_tickets.get(&caller) {
+                    Some(tickets) => tickets,
+                    None => Vec::new()
+                };
                 concert.tickets_left -= 1;
                 self.concerts.insert(concert_id, &concert);
                 self.tickets_map.insert(&ticket_id, &caller);
                 self.tickets_owners_map.insert(&ticket_id, &ticket_owner);
-                owner_tickets.tickets.push(ticket_id);
+                owner_tickets.push(ticket_id);
                 self.account_tickets.insert(&caller, &owner_tickets);
                 Ok(())
         }
@@ -125,7 +119,10 @@ mod tickets {
         #[ink(message)]
         pub fn get_my_tickets(&self) -> Result<Vec<String>> {
             let caller = self.env().caller();
-            Ok(self.account_tickets.get(caller).unwrap().tickets)
+            match self.account_tickets.get(caller) {
+                Some(tickets) => return Ok(tickets),
+                None => return Err(CustomError::AccountNotFound)
+            };
         }
     }
 
@@ -137,8 +134,10 @@ mod tickets {
         /// We test if the default constructor does its job.
         #[ink::test]
         fn default_works() {
-            let tickets = Tickets::default();
-            
+            let mut tickets = Tickets::default();
+            assert_eq!(tickets.add_new_concert(30, 30, 1780600226001), ());
+            assert_eq!(tickets.buy_ticket(0, "pawel".to_string(), "doe".to_string()) , Ok(()));
+            assert_eq!(tickets.get_my_tickets(), Ok(vec!["0, 30".to_string()]));
         }
     }
 }
