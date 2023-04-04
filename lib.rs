@@ -68,8 +68,8 @@ mod tickets {
         #[ink(constructor)]
         pub fn default() -> Self {
             Self {
-                name: "".to_owned(),
-                description: "".to_owned(),
+                name: "".to_string(),
+                description: "".to_string(),
                 concert_counter: 0,
                 concerts: Mapping::new(),
                 account_tickets: Mapping::new(),
