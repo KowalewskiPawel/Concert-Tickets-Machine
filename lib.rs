@@ -91,7 +91,7 @@ mod tickets {
         }
 
         #[ink(message)]
-        pub fn get(&self) -> Result<Vec<Concert>> {
+        pub fn get_concerts(&self) -> Result<Vec<Concert>> {
             let mut concerts: Vec<Concert> = Vec::new();
             for n in 0..self.concert_counter {
                 let concert = self.concerts.get(n).ok_or(CustomError::ConcertDoesntExist).unwrap();
@@ -101,7 +101,7 @@ mod tickets {
         }
 
         #[ink(message)]
-        pub fn buy_tikcet(&mut self, concert_id: u32, name: String, surname: String) -> Result<()> {
+        pub fn buy_ticket(&mut self, concert_id: u32, name: String, surname: String) -> Result<()> {
                 let mut concert = self.concerts.get(concert_id).ok_or(CustomError::ConcertDoesntExist).unwrap();
                 if concert.tickets_left < 1 {
                     return Err(CustomError::TicketsSoldOut);
@@ -129,25 +129,16 @@ mod tickets {
         }
     }
 
-    // #[cfg(test)]
-    // mod tests {
-    //     /// Imports all the definitions from the outer scope so we can use them here.
-    //     use super::*;
+    #[cfg(test)]
+    mod tests {
+        /// Imports all the definitions from the outer scope so we can use them here.
+        use super::*;
 
-    //     /// We test if the default constructor does its job.
-    //     #[ink::test]
-    //     fn default_works() {
-    //         let tickets = Tickets::default();
-    //         assert_eq!(tickets.get(), false);
-    //     }
-
-    //     /// We test a simple use case of our contract.
-    //     #[ink::test]
-    //     fn it_works() {
-    //         let mut tickets = Tickets::new(false);
-    //         assert_eq!(tickets.get(), false);
-    //         tickets.flip();
-    //         assert_eq!(tickets.get(), true);
-    //     }
-    // }
+        /// We test if the default constructor does its job.
+        #[ink::test]
+        fn default_works() {
+            let tickets = Tickets::default();
+            
+        }
+    }
 }
