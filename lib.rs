@@ -2,7 +2,6 @@
 
 #[ink::contract]
 mod tickets {
-
     use ink::storage::Mapping;
     use ink::prelude::string::String;
     use ink::prelude::vec::Vec;
@@ -25,6 +24,7 @@ mod tickets {
         name: String,
         description: String,
         concert_counter: u32,
+        admins: Vec<AccountId>,
         concerts: Mapping<u32, Concert>,
         account_tickets: Mapping<AccountId, Vec<String>>,
         tickets_map: Mapping<String, AccountId>,
@@ -39,17 +39,20 @@ mod tickets {
         ConcertFinished,
         IncorrectPaymentValue,
         AccountNotFound,
+        AccessOnlyForAdmins,
+        InsufficientFunds,
     }
 
     pub type Result<T> = core::result::Result<T, CustomError>;
 
     impl Tickets {
         #[ink(constructor)]
-        pub fn new(init_name: String, init_description: String) -> Self {
+        pub fn new(init_name: String, init_description: String, owners: Vec<AccountId>) -> Self {
             Self {
                 name: init_name,
                 description: init_description,
                 concert_counter: 0,
+                admins: owners,
                 concerts: Mapping::new(),
                 account_tickets: Mapping::new(),
                 tickets_map: Mapping::new(),
@@ -59,10 +62,14 @@ mod tickets {
 
         #[ink(constructor)]
         pub fn default() -> Self {
+            let caller = Self::env().caller();
+            let mut admins_vec = Vec::new();
+            admins_vec.push(caller);
             Self {
                 name: "".to_string(),
                 description: "".to_string(),
                 concert_counter: 0,
+                admins: admins_vec,
                 concerts: Mapping::new(),
                 account_tickets: Mapping::new(),
                 tickets_map: Mapping::new(),
@@ -70,8 +77,17 @@ mod tickets {
             }
         }
 
+        fn check_access(&self) -> Result<()> {
+            let caller = self.env().caller();
+            if !self.admins.contains(&caller) {
+                return Err(CustomError::AccessOnlyForAdmins);
+            }
+            Ok(())
+        }
+
         #[ink(message)]
-        pub fn add_new_concert(&mut self, tickets_available: u32, price: u128, timestamp: Timestamp) {
+        pub fn add_new_concert(&mut self, tickets_available: u32, price: u128, timestamp: Timestamp) -> Result<()> {
+            self.check_access()?;
             let new_concert = Concert {
                 concert_id: self.concert_counter,
                 ticket_price: price,
@@ -80,6 +96,7 @@ mod tickets {
             };
             self.concerts.insert(self.concert_counter, &new_concert);
             self.concert_counter += 1;
+            Ok(())
         }
 
         #[ink(message)]
@@ -90,6 +107,19 @@ mod tickets {
                 concerts.push(concert);
             }
             Ok(concerts)
+        }
+
+        #[ink(message)]
+        pub fn payout(&mut self, value: Balance) -> Result<()> {
+            self.check_access()?;
+            if value >= self.env().balance() {
+                return Err(CustomError::InsufficientFunds);
+            }
+            if self.env().transfer(self.env().caller(), value).is_err() {
+                return Err(CustomError::InsufficientFunds);
+            } else {
+                Ok(())
+            }
         }
 
         #[ink(message, payable)]
@@ -142,14 +172,33 @@ mod tickets {
         #[ink::test]
         fn default_works() {
             let mut tickets = Tickets::default();
+            assert_eq!(tickets.add_new_concert(30, 30, 1780600226001), Ok(()));
             let accounts = ink::env::test::default_accounts::<ink::env::DefaultEnvironment>();
             let contract = ink::env::account_id::<ink::env::DefaultEnvironment>();
             ink::env::test::set_callee::<ink::env::DefaultEnvironment>(contract);
             ink::env::test::set_caller::<ink::env::DefaultEnvironment>(accounts.bob);
             ink::env::test::set_account_balance::<ink::env::DefaultEnvironment>(accounts.bob, 100);
-            assert_eq!(tickets.add_new_concert(30, 30, 1780600226001), ());
             assert_eq!(pay_with_call!(tickets.buy_ticket(0, "pawel".to_string(), "doe".to_string()), 30) , Ok(()));
             assert_eq!(tickets.get_my_tickets(), Ok(vec!["0, 30".to_string()]));
+        }
+
+        #[ink::test]
+        fn payout_works() {
+            let accounts = ink::env::test::default_accounts::<ink::env::DefaultEnvironment>();
+            let contract = ink::env::account_id::<ink::env::DefaultEnvironment>();
+            ink::env::test::set_callee::<ink::env::DefaultEnvironment>(contract);
+            ink::env::test::set_caller::<ink::env::DefaultEnvironment>(accounts.bob);
+            let mut tickets = Tickets::default();
+            ink::env::test::set_account_balance::<ink::env::DefaultEnvironment>(accounts.bob, 100);
+            assert_eq!(tickets.add_new_concert(30, 30, 1780600226001), Ok(()));
+            ink::env::test::set_caller::<ink::env::DefaultEnvironment>(accounts.alice);
+            ink::env::test::set_account_balance::<ink::env::DefaultEnvironment>(accounts.alice, 100);
+            assert_eq!(pay_with_call!(tickets.buy_ticket(0, "pawel".to_string(), "doe".to_string()), 30) , Ok(()));
+            assert_eq!(tickets.get_my_tickets(), Ok(vec!["0, 30".to_string()]));
+            ink::env::test::set_caller::<ink::env::DefaultEnvironment>(accounts.bob);
+            assert_eq!(tickets.payout(30), Ok(()));
+            let bobs_balance = ink::env::test::get_account_balance::<ink::env::DefaultEnvironment>(accounts.bob);
+            assert_eq!(bobs_balance, Ok(130));
         }
     }
 }
