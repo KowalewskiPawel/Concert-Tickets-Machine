@@ -15,7 +15,7 @@ mod tickets {
     )]
     pub struct Concert {
         concert_id: u32,
-        ticket_price: u32,
+        ticket_price: u128,
         date: Timestamp,
         tickets_left: u32,
     }
@@ -37,6 +37,7 @@ mod tickets {
         ConcertDoesntExist,
         TicketsSoldOut,
         ConcertFinished,
+        IncorrectPaymentValue,
         AccountNotFound,
     }
 
@@ -70,7 +71,7 @@ mod tickets {
         }
 
         #[ink(message)]
-        pub fn add_new_concert(&mut self, tickets_available: u32, price: u32, timestamp: Timestamp) {
+        pub fn add_new_concert(&mut self, tickets_available: u32, price: u128, timestamp: Timestamp) {
             let new_concert = Concert {
                 concert_id: self.concert_counter,
                 ticket_price: price,
@@ -91,7 +92,7 @@ mod tickets {
             Ok(concerts)
         }
 
-        #[ink(message)]
+        #[ink(message, payable)]
         pub fn buy_ticket(&mut self, concert_id: u32, name: String, surname: String) -> Result<()> {
                 let mut concert = self.concerts.get(concert_id).ok_or(CustomError::ConcertDoesntExist).unwrap();
                 if concert.tickets_left < 1 {
@@ -99,6 +100,10 @@ mod tickets {
                 }
                 if self.env().block_timestamp() > concert.date {
                     return Err(CustomError::ConcertFinished);
+                }
+                let transferred_value = self.env().transferred_value();
+                if transferred_value != concert.ticket_price {
+                    return Err(CustomError::IncorrectPaymentValue);
                 }
                 let caller = self.env().caller();
                 let ticket_id = String::from(concert_id.to_string() + ", " + &concert.tickets_left.to_string());
@@ -128,6 +133,8 @@ mod tickets {
 
     #[cfg(test)]
     mod tests {
+        use ink::env::pay_with_call;
+
         /// Imports all the definitions from the outer scope so we can use them here.
         use super::*;
 
@@ -135,8 +142,13 @@ mod tickets {
         #[ink::test]
         fn default_works() {
             let mut tickets = Tickets::default();
+            let accounts = ink::env::test::default_accounts::<ink::env::DefaultEnvironment>();
+            let contract = ink::env::account_id::<ink::env::DefaultEnvironment>();
+            ink::env::test::set_callee::<ink::env::DefaultEnvironment>(contract);
+            ink::env::test::set_caller::<ink::env::DefaultEnvironment>(accounts.bob);
+            ink::env::test::set_account_balance::<ink::env::DefaultEnvironment>(accounts.bob, 100);
             assert_eq!(tickets.add_new_concert(30, 30, 1780600226001), ());
-            assert_eq!(tickets.buy_ticket(0, "pawel".to_string(), "doe".to_string()) , Ok(()));
+            assert_eq!(pay_with_call!(tickets.buy_ticket(0, "pawel".to_string(), "doe".to_string()), 30) , Ok(()));
             assert_eq!(tickets.get_my_tickets(), Ok(vec!["0, 30".to_string()]));
         }
     }
